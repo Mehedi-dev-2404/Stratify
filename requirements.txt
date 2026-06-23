@@ -1,0 +1,7 @@
+anthropic
+apify-client
+gspread
+google-auth
+requests
+beautifulsoup4
+python-dotenv

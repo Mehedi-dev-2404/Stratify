@@ -1,0 +1,6 @@
+.env
+raw_cache/
+research_db/
+__pycache__/
+*.pyc
+*.pyo
