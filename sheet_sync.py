@@ -19,9 +19,9 @@ _INDEX_CSV = _RESEARCH_DB / "index.csv"
 _MOCK_SHEET_CSV = _BASE / "mock_sheet.csv"
 
 _MOCK_SHEET_FIELDNAMES = [
-    "name", "domain", "linkedin_url", "website_summary",
-    "linkedin_summary", "category", "funding_status",
-    "funding_amount", "funding_source_note", "last_updated",
+    "name", "domain", "website_summary", "linkedin_summary",
+    "category", "funding_status", "funding_amount",
+    "funding_confidence", "last_updated",
 ]
 
 _INDEX_FIELDNAMES = [

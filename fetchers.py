@@ -13,7 +13,7 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
-from config import APIFY_API_TOKEN, MOCK_MODE
+from config import APIFY_API_TOKEN, API_MOCK_MODE as MOCK_MODE
 
 # ---------------------------------------------------------------------------
 # Cache helpers
@@ -148,6 +148,14 @@ _MOCK_FUNDING_SNIPPETS: list[str] = [
         "contributing data scientists as a key moat. (Bloomberg, April 2019)"
     ),
 ]
+
+# Funding-signal keywords for founder profile screening
+_FUNDING_KEYWORDS_RE = re.compile(
+    r"\b(raised|raising|funding|funded|series\s+[a-e]|seed\s+round|"
+    r"investment|investor|venture|vc|pre-seed|angel\s+round|"
+    r"million|billion|\$\d|\€\d|£\d)\b",
+    re.IGNORECASE,
+)
 
 # ---------------------------------------------------------------------------
 # Public fetch functions
@@ -339,28 +347,130 @@ def fetch_website_text(domain: str) -> str:
     return result
 
 
-def fetch_funding_web_search(company_name: str) -> list[str]:
-    """Search the web for funding information about a company.
+def fetch_founder_linkedin(founder_url: str) -> dict:
+    """Fetch a founder's personal LinkedIn profile via Apify harvestapi/linkedin-profile.
 
-    NOTE: Web search is intentionally deferred to a later round. This function
-    will be wired to a search API (e.g. Tavily or SerpAPI) separately from the
-    Apify work in Round 3. The mock branch remains available for pipeline testing.
+    Args:
+        founder_url: Full LinkedIn personal profile URL (linkedin.com/in/...).
+
+    Returns:
+        dict with keys: name, headline, summary, current_company, funding_text.
+        funding_text is a concatenation of headline + summary for keyword scanning.
+        Returns empty dict on failure rather than raising, so a missing profile
+        never blocks the main enrichment pipeline.
+    """
+    if MOCK_MODE:
+        return {
+            "name": "Fixture Founder",
+            "headline": "Co-Founder & CEO at Acme | Previously Goldman Sachs",
+            "summary": "Building AI tools for systematic investors.",
+            "current_company": "Acme",
+            "funding_text": "Co-Founder & CEO at Acme | Previously Goldman Sachs Building AI tools for systematic investors.",
+        }
+
+    # --- Real branch ---
+    slug = _slugify(founder_url)
+    cache_file = _cache_path(slug, "founder_profile")
+
+    if cache_file.exists():
+        return json.loads(cache_file.read_text())
+
+    try:
+        items = _apify_run_sync(
+            "harvestapi/linkedin-profile",
+            {"profileUrls": [founder_url]},
+        )
+    except Exception:
+        # Never let a failed founder fetch crash the pipeline
+        return {}
+
+    raw = items[0] if items else {}
+
+    headline = raw.get("headline") or raw.get("title") or ""
+    summary = (
+        raw.get("summary")
+        or raw.get("about")
+        or raw.get("description")
+        or ""
+    )
+    current_company = ""
+    positions = raw.get("positions") or raw.get("currentPositions") or []
+    if isinstance(positions, list) and positions:
+        current_company = (
+            positions[0].get("companyName")
+            or positions[0].get("company")
+            or ""
+        )
+
+    result = {
+        "name": raw.get("fullName") or raw.get("name") or "",
+        "headline": headline,
+        "summary": summary,
+        "current_company": current_company,
+        "funding_text": f"{headline} {summary}".strip(),
+    }
+
+    cache_file.write_text(json.dumps(result, indent=2))
+    return result
+
+
+def founder_profile_has_funding_signal(profile: dict) -> bool:
+    """Return True if a founder profile's text contains funding-related keywords."""
+    text = profile.get("funding_text", "")
+    return bool(_FUNDING_KEYWORDS_RE.search(text))
+
+
+def fetch_funding_web_search(
+    company_name: str,
+    search_fn=None,
+) -> list[str]:
+    """Search the web for funding information about a company.
 
     Args:
         company_name: Human-readable company name.
+        search_fn: Callable[[str], list[str]] that accepts a query string and
+            returns a list of text snippets. Injected by the caller so no
+            specific search API is hardcoded here. Required in real mode;
+            ignored in MOCK_MODE. Example compatible APIs: Tavily, SerpAPI,
+            Brave Search.
 
     Returns:
-        List of text snippets mentioning funding rounds, investors, or amounts.
+        List of raw text snippets mentioning funding rounds, investors, or amounts.
+        Synthesize.py is responsible for interpreting and cross-checking these.
     """
+    slug = _slugify(company_name)
+    cache_file = _cache_path(slug, "funding")
+
     if MOCK_MODE:
-        slug = _slugify(company_name)
-        cache_file = _cache_path(slug, "funding")
-        # TODO: if cache_file.exists(): return json.loads(cache_file.read_text())
-        # TODO: cache_file.write_text(json.dumps(_MOCK_FUNDING_SNIPPETS, indent=2))
+        if cache_file.exists():
+            return json.loads(cache_file.read_text())
+        cache_file.write_text(json.dumps(_MOCK_FUNDING_SNIPPETS, indent=2))
         return _MOCK_FUNDING_SNIPPETS
 
-    # Web search API not yet wired — deferred to post-Round 3.
-    raise NotImplementedError(
-        "fetch_funding_web_search real branch is intentionally deferred. "
-        "Wire a search API (Tavily / SerpAPI) in a dedicated round."
-    )
+    # --- Real branch ---
+    if cache_file.exists():
+        return json.loads(cache_file.read_text())
+
+    if search_fn is None:
+        raise ValueError(
+            "fetch_funding_web_search requires a search_fn callable in real mode. "
+            "Pass search_fn=<your_search_callable> from the call site."
+        )
+
+    queries = [
+        f"{company_name} funding raised",
+        f"{company_name} series A B C seed",
+    ]
+
+    snippets: list[str] = []
+    seen: set[str] = set()
+    for query in queries:
+        results = search_fn(query)
+        for snippet in results:
+            snippet = snippet.strip()
+            if snippet and snippet not in seen:
+                seen.add(snippet)
+                snippets.append(snippet)
+
+    cache_file.write_text(json.dumps(snippets, indent=2))
+    return snippets

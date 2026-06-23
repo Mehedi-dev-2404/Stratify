@@ -1,17 +1,21 @@
 """
 synthesize.py — Synthesizes raw fetched data into a structured company record.
-In MOCK_MODE=True returns fixture enriched data.
-In MOCK_MODE=False calls Claude claude-sonnet-4-6 via the Anthropic SDK (Round 3).
+In API_MOCK_MODE=True returns fixture enriched data.
+In API_MOCK_MODE=False calls Claude claude-sonnet-4-6 via the Anthropic SDK.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import date
 
-from config import CATEGORIES, MOCK_MODE
+import anthropic
+
+from config import ANTHROPIC_API_KEY, CATEGORIES, API_MOCK_MODE as MOCK_MODE
 
 # ---------------------------------------------------------------------------
-# Prompt template (used in Round 3 when MOCK_MODE=False)
+# Prompt template
 # ---------------------------------------------------------------------------
 
 SYNTHESIS_PROMPT = """
@@ -33,27 +37,43 @@ structured JSON summary. Be factual, concise, and never hallucinate.
 
 ## Instructions
 
-1. website_summary (2-3 sentences): Summarise what the company does based on the
-   website text. Focus on product, customer, and differentiator.
+1. website_summary (max 2 sentences, plain language): What does this company sell
+   or build, and who is it for? Write for a salesperson skimming a list — no
+   jargon, no filler phrases like "leverages cutting-edge AI". Be specific and
+   concrete. If no website text is available, set to empty string "".
 
-2. linkedin_summary (2-3 sentences): Summarise the company's recent activity and
-   positioning based on the LinkedIn posts and profile description.
+2. linkedin_summary (max 2 sentences, plain language): What has this company been
+   doing lately — hiring, launching, announcing? Same plain-language rule as
+   above. If the LinkedIn posts section says no data is available, set
+   linkedin_summary to empty string "" — do NOT infer from the website or
+   company name.
 
 3. category: Classify the company into exactly one of the following categories.
    Use the label verbatim — do not invent new categories.
    Categories: {categories}
 
-4. funding_status: One of "Funded", "Bootstrapped", "Public", "Unknown".
-   Cross-check the linkedin_profile funding_status field against the web search
-   snippets. If both agree, use that value. If they conflict, note the conflict in
-   funding_source_note and use the more specific/sourced value.
+4. funding_status: One of "Funded", "Bootstrapped", "Public" — or empty string
+   "" if funding cannot be verified from the provided sources. Do NOT use
+   "Unknown", "N/A", or any other placeholder. Cross-check the linkedin_profile
+   funding_status field against the web search snippets. If both agree, use that
+   value. If they conflict, use the more specific/sourced value and set
+   funding_confidence to "Conflicting". If neither source contains funding
+   information, return "".
 
 5. funding_amount: The most recent total or round amount (e.g. "$21M Series A").
-   Leave blank ("") if unverified by at least one source. Never guess.
+   Return empty string "" if unverified. Never guess. Never return "Unknown",
+   "N/A", or any placeholder.
 
-6. funding_source_note: One sentence explaining the sourcing of the funding data,
-   or noting any conflict between LinkedIn and web search results. Leave blank if
-   both sources agree cleanly.
+6. funding_confidence: Exactly one of these four values — no other values allowed:
+   - "Verified"    — a specific dollar/euro amount AND a round type (e.g. "Series A",
+                     "Seed", "IPO") are EXPLICITLY stated in at least one source.
+                     Vague language like "raised significant funding" does NOT qualify.
+   - "Partial"     — round type is known but amount is missing, OR amount is known
+                     but round type is missing.
+   - "Unverified"  — no source contained explicit funding information. In this case
+                     funding_status AND funding_amount MUST both be "".
+   - "Conflicting" — sources gave different amounts or rounds; use the most
+                     specific/recent value in funding_status and funding_amount.
 
 ## Output format
 Return ONLY valid JSON with these exact keys — no markdown fences, no extra text:
@@ -63,7 +83,7 @@ Return ONLY valid JSON with these exact keys — no markdown fences, no extra te
   "category": "...",
   "funding_status": "...",
   "funding_amount": "...",
-  "funding_source_note": "..."
+  "funding_confidence": "..."
 }}
 """.strip()
 
@@ -89,10 +109,7 @@ _MOCK_SYNTHESIS_RESULT = {
     "category": "AI Trading/Alpha Generation",
     "funding_status": "Funded",
     "funding_amount": "$21M Series A",
-    "funding_source_note": (
-        "LinkedIn profile and web search snippets both report $21M raised; "
-        "TechCrunch (March 2019) confirms Series A led by Union Square Ventures."
-    ),
+    "funding_confidence": "Verified",
 }
 
 # ---------------------------------------------------------------------------
@@ -107,43 +124,118 @@ def synthesize_company(raw_data: dict) -> dict:
         raw_data: Dict with keys:
             - name (str)
             - domain (str)
-            - linkedin_profile (dict)   — from fetch_company_linkedin()
-            - linkedin_posts (list[str]) — from fetch_company_posts()
-            - website_text (str)        — from fetch_website_text()
-            - funding_snippets (list[str]) — from fetch_funding_web_search()
+            - linkedin_profile (dict)      — from fetch_company_linkedin(), or {}
+            - linkedin_posts (list[str])   — from fetch_company_posts(), or []
+            - website_text (str)           — from fetch_website_text()
+            - funding_snippets (list[str]) — from fetch_funding_web_search(), or []
 
     Returns:
         dict with keys: name, domain, website_summary, linkedin_summary,
-        category, funding_status, funding_amount, funding_source_note,
+        category, funding_status, funding_amount, funding_confidence,
         last_updated.
     """
-    if not MOCK_MODE:
-        # Round 3: wire real Claude call here
-        # prompt = SYNTHESIS_PROMPT.format(
-        #     linkedin_profile=json.dumps(raw_data.get("linkedin_profile", {}), indent=2),
-        #     linkedin_posts="\n".join(raw_data.get("linkedin_posts", [])),
-        #     website_text=raw_data.get("website_text", ""),
-        #     funding_snippets="\n".join(raw_data.get("funding_snippets", [])),
-        #     categories=", ".join(CATEGORIES),
-        # )
-        # import anthropic
-        # client = anthropic.Anthropic()
-        # message = client.messages.create(
-        #     model="claude-sonnet-4-6",
-        #     max_tokens=1024,
-        #     messages=[{"role": "user", "content": prompt}],
-        # )
-        # result = json.loads(message.content[0].text)
-        raise NotImplementedError("real API call not yet wired")
+    if MOCK_MODE:
+        # Validate mock category is in allowed list (guards against fixture drift)
+        assert _MOCK_SYNTHESIS_RESULT["category"] in CATEGORIES, (
+            f"Mock category '{_MOCK_SYNTHESIS_RESULT['category']}' not in CATEGORIES"
+        )
+        return {
+            "name": raw_data.get("name", ""),
+            "domain": raw_data.get("domain", ""),
+            **_MOCK_SYNTHESIS_RESULT,
+            "last_updated": date.today().isoformat(),
+        }
 
-    # Validate mock category is in allowed list (guards against fixture drift)
-    assert _MOCK_SYNTHESIS_RESULT["category"] in CATEGORIES, (
-        f"Mock category '{_MOCK_SYNTHESIS_RESULT['category']}' not in CATEGORIES"
+    # --- Real branch: call Claude claude-sonnet-4-6 ---
+    posts = raw_data.get("linkedin_posts", [])
+    profile = raw_data.get("linkedin_profile") or {}
+
+    linkedin_posts_text = (
+        "\n\n".join(posts)
+        if posts
+        else '(No LinkedIn posts available — set linkedin_summary to empty string "")'
     )
+    linkedin_profile_text = (
+        json.dumps(profile, indent=2)
+        if profile
+        else "(No LinkedIn profile available)"
+    )
+
+    website_text = raw_data.get("website_text", "").strip()
+    funding_snippets = raw_data.get("funding_snippets", [])
+
+    prompt = SYNTHESIS_PROMPT.format(
+        linkedin_profile=linkedin_profile_text,
+        linkedin_posts=linkedin_posts_text,
+        website_text=website_text or "(No website text available)",
+        funding_snippets=(
+            "\n\n".join(funding_snippets)
+            if funding_snippets
+            else "(No funding data available)"
+        ),
+        categories=", ".join(CATEGORIES),
+    )
+
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    message = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw_text = message.content[0].text.strip()
+
+    # Strip ```json ... ``` fences if present
+    raw_text = re.sub(r"^```(?:json)?\s*\n?", "", raw_text)
+    raw_text = re.sub(r"\n?```\s*$", "", raw_text)
+    raw_text = raw_text.strip()
+
+    result = json.loads(raw_text)
+
+    # Guard: truncate website_summary and linkedin_summary to max 2 sentences
+    for field in ("website_summary", "linkedin_summary"):
+        text = result.get(field, "")
+        if text:
+            # Split on sentence-ending punctuation; keep at most 2 sentences
+            parts = re.split(r"(?<=[.!?])\s+", text.strip())
+            if len(parts) > 2:
+                result[field] = " ".join(parts[:2])
+
+    # Guard: invalid category → "Other"
+    if result.get("category") not in CATEGORIES:
+        result["category"] = "Other"
+
+    # Guard: coerce placeholder funding values to empty string
+    _FUNDING_PLACEHOLDERS = {"unknown", "n/a", "na", "tbd", "none", "-"}
+    if result.get("funding_status", "").strip().lower() in _FUNDING_PLACEHOLDERS:
+        result["funding_status"] = ""
+    if result.get("funding_amount", "").strip().lower() in _FUNDING_PLACEHOLDERS:
+        result["funding_amount"] = ""
+
+    # Guard: invalid confidence value → "Unverified"
+    _VALID_CONFIDENCE = {"Verified", "Partial", "Unverified", "Conflicting"}
+    if result.get("funding_confidence") not in _VALID_CONFIDENCE:
+        result["funding_confidence"] = "Unverified"
+
+    # Guard: "Verified" requires a number or currency symbol in funding_amount
+    # — downgrade to "Partial" if the amount field lacks that signal
+    if result["funding_confidence"] == "Verified":
+        amount = result.get("funding_amount", "")
+        if not re.search(r"[\d$£€¥₹]", amount):
+            result["funding_confidence"] = "Partial"
+
+    # Guard: "Unverified" must have blank funding fields
+    if result["funding_confidence"] == "Unverified":
+        result["funding_status"] = ""
+        result["funding_amount"] = ""
 
     return {
         "name": raw_data.get("name", ""),
         "domain": raw_data.get("domain", ""),
-        **_MOCK_SYNTHESIS_RESULT,
+        "website_summary": result.get("website_summary", ""),
+        "linkedin_summary": result.get("linkedin_summary", ""),
+        "category": result["category"],
+        "funding_status": result.get("funding_status", ""),
+        "funding_amount": result.get("funding_amount", ""),
+        "funding_confidence": result["funding_confidence"],
         "last_updated": date.today().isoformat(),
     }
