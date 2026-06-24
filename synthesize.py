@@ -225,6 +225,13 @@ def synthesize_company(raw_data: dict) -> dict:
         if not re.search(r"[\d$£€¥₹]", amount):
             result["funding_confidence"] = "Partial"
 
+    # Guard: "Partial" only applies when status is "Funded" but round/amount
+    # details are incomplete. Non-Funded status (Bootstrapped, empty) with no
+    # amount has nothing to be partially known — downgrade to "Unverified".
+    if result["funding_confidence"] == "Partial":
+        if result.get("funding_status", "") not in ("Funded", "Public"):
+            result["funding_confidence"] = "Unverified"
+
     # Guard: "Unverified" must have blank funding fields
     if result["funding_confidence"] == "Unverified":
         result["funding_status"] = ""
