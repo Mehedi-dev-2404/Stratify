@@ -160,20 +160,26 @@ def main() -> None:
                 # 2. Website — always attempted
                 website_text = fetch_website_text(domain)
 
-                # 3. Funding web search — LinkedIn-first, founder-second priority:
-                #    Skip web search if company LinkedIn profile already has
-                #    explicit funding data (status or amount populated).
+                # 3. Funding web search — always fetch Tavily so Claude can
+                #    cross-check dates. LinkedIn fundingData can be stale (e.g.
+                #    a 2024 round when a more recent 2026 round exists on the
+                #    web). Both sources are always passed to synthesize_company()
+                #    which picks the most recent one.
+                #
+                #    Founder LinkedIn profile is a cheap pre-check: if it
+                #    carries a funding keyword AND LinkedIn profile also has
+                #    funding data, we trust those two agreeing sources and skip
+                #    Tavily (saves API cost for clear-cut cases).
                 linkedin_has_funding = bool(
                     linkedin_profile.get("funding_status")
                     or linkedin_profile.get("funding_amount")
                 )
 
-                # Second check: fetch first founder's LinkedIn profile and scan
-                # headline + summary for funding keywords.
+                # Fetch first founder's LinkedIn profile and scan for keywords.
                 founder_profile: dict = {}
                 founder_has_funding = False
                 raw_founder_urls = meta.get("founder_linkedin_urls", "").strip()
-                if raw_founder_urls and not linkedin_has_funding:
+                if raw_founder_urls:
                     first_founder_url = raw_founder_urls.split(";")[0].strip()
                     if first_founder_url:
                         founder_profile = fetch_founder_linkedin(first_founder_url)
@@ -181,8 +187,12 @@ def main() -> None:
                             founder_profile
                         )
 
+                # Skip Tavily only when BOTH LinkedIn company profile AND founder
+                # profile agree on funding — two independent sources confirming
+                # the same signal. LinkedIn alone is not enough because its
+                # lastFundingRound date may lag behind recent news.
                 funding_snippets: list[str] = []
-                if not (linkedin_has_funding or founder_has_funding):
+                if not (linkedin_has_funding and founder_has_funding):
                     funding_snippets = fetch_funding_web_search(
                         name,
                         search_fn=lambda q: tavily_search(q, purpose="funding"),

@@ -1,0 +1,7 @@
+name,domain,error
+Ahead Innovation Labs,www.aheadinnovationlabs.com,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []
+Aiera,aiera.com,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []
+Alphasense,www.alpha-sense.com,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []
+AlphaWatch AI,alphawatch.ai,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []
+Axyon AI,axyon.ai,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []
+Batonics,www.batonics.com,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []

@@ -39,19 +39,30 @@ def _apify_run_sync(actor_id: str, run_input: dict) -> list[dict]:
     completion, returning the dataset contents in one call).
 
     Args:
-        actor_id: Apify actor identifier, e.g. "harvestapi/linkedin-company".
+        actor_id: Apify actor identifier in owner~name format,
+            e.g. "harvestapi~linkedin-company".
         run_input: Actor input dict (will be JSON-encoded).
 
     Returns:
         List of dataset item dicts from the completed run.
+        Returns [] if APIFY_API_TOKEN is not set.
 
     Raises:
         RuntimeError: If the Apify API returns a non-200 status.
     """
-    url = f"https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items"
+    if not APIFY_API_TOKEN:
+        print(f"  [APIFY WARN] APIFY_API_TOKEN not set — skipping actor '{actor_id}'")
+        return []
+
+    # Actor IDs must use ~ as the username separator in the URL path.
+    # Normalise any / separators to ~ to avoid broken URL paths.
+    safe_actor_id = actor_id.replace("/", "~")
+    url = f"https://api.apify.com/v2/acts/{safe_actor_id}/run-sync-get-dataset-items"
     params = {"token": APIFY_API_TOKEN}
     response = requests.post(url, params=params, json=run_input, timeout=120)
-    if response.status_code != 200:
+    # Apify returns 200 on success; 201 when the run completes with an empty
+    # dataset. Both are non-error responses — treat them the same.
+    if response.status_code not in (200, 201):
         raise RuntimeError(
             f"Apify actor '{actor_id}' failed "
             f"({response.status_code}): {response.text[:300]}"
@@ -187,14 +198,17 @@ def fetch_company_linkedin(company_name: str, linkedin_url: str) -> dict:
 
     items = _apify_run_sync(
         "harvestapi/linkedin-company",
-        {"urls": [linkedin_url]},
+        {"companies": [linkedin_url]},
     )
 
     raw = items[0] if items else {}
 
     # Map Apify response fields → internal schema.
-    # Apify harvestapi/linkedin-company returns camelCase fields; use .get()
-    # with safe defaults throughout so missing fields never raise KeyError.
+    # harvestapi/linkedin-company returns camelCase fields with a rich
+    # fundingData.lastFundingRound sub-object. Use .get() with safe defaults
+    # throughout so missing fields never raise KeyError.
+    funding_status, funding_amount = _extract_funding(raw)
+
     result = {
         "name": raw.get("name") or raw.get("companyName") or company_name,
         "industry": raw.get("industry") or "",
@@ -204,9 +218,8 @@ def fetch_company_linkedin(company_name: str, linkedin_url: str) -> dict:
             or raw.get("companySize")
             or ""
         ),
-        # LinkedIn profiles rarely expose funding; leave blank if unverified.
-        "funding_status": raw.get("fundingStatus") or "",
-        "funding_amount": raw.get("fundingAmount") or "",
+        "funding_status": funding_status,
+        "funding_amount": funding_amount,
         "description": raw.get("description") or raw.get("tagline") or "",
         "follower_count": raw.get("followerCount") or raw.get("followersCount") or 0,
         "headquarters": _extract_headquarters(raw),
@@ -233,6 +246,89 @@ def _extract_headquarters(raw: dict) -> str:
     return ""
 
 
+# Mapping from Apify's SCREAMING_SNAKE_CASE fundingType to human-readable labels
+_FUNDING_TYPE_MAP: dict[str, str] = {
+    "SEED": "Seed",
+    "ANGEL": "Angel",
+    "PRE_SEED": "Pre-Seed",
+    "SERIES_A": "Series A",
+    "SERIES_B": "Series B",
+    "SERIES_C": "Series C",
+    "SERIES_D": "Series D",
+    "SERIES_E": "Series E",
+    "SERIES_F": "Series F",
+    "VENTURE": "Venture",
+    "PRIVATE_EQUITY": "Private Equity",
+    "DEBT_FINANCING": "Debt Financing",
+    "CONVERTIBLE_NOTE": "Convertible Note",
+    "GRANT": "Grant",
+    "IPO": "IPO",
+    "POST_IPO_EQUITY": "Post-IPO Equity",
+    "POST_IPO_DEBT": "Post-IPO Debt",
+    "SECONDARY_MARKET": "Secondary Market",
+    "NON_EQUITY_ASSISTANCE": "Non-Equity Assistance",
+    "CORPORATE_ROUND": "Corporate Round",
+    "SERIES_UNKNOWN": "Venture (undisclosed series)",
+    "UNDISCLOSED": "Undisclosed",
+}
+
+
+def _extract_funding(raw: dict) -> tuple[str, str]:
+    """Extract funding_status and funding_amount from harvestapi fundingData.
+
+    Reads the nested fundingData.lastFundingRound structure confirmed by live
+    Apify testing:
+        fundingData.lastFundingRound.fundingType          — e.g. "SERIES_A"
+        fundingData.lastFundingRound.moneyRaised.amount   — e.g. 5000000
+        fundingData.lastFundingRound.moneyRaised.currencyCode — e.g. "USD"
+        fundingData.lastFundingRound.announcedOn          — {year, month, day}
+
+    Returns:
+        (funding_status, funding_amount) — both "" if not available.
+    """
+    funding_data = raw.get("fundingData") or {}
+    last_round = funding_data.get("lastFundingRound") or {}
+
+    funding_type_raw = last_round.get("fundingType") or ""
+    funding_type = _FUNDING_TYPE_MAP.get(funding_type_raw, funding_type_raw)
+
+    # Map funding type → status label
+    if funding_type_raw == "IPO":
+        funding_status = "Public"
+    elif funding_type_raw:
+        funding_status = "Funded"
+    else:
+        funding_status = ""
+
+    # Build amount string: "$5M Series A (2023)"
+    money = last_round.get("moneyRaised") or {}
+    amount_raw = money.get("amount")
+    currency = money.get("currencyCode") or "USD"
+    announced = last_round.get("announcedOn") or {}
+    year = announced.get("year") or ""
+
+    amount_str = ""
+    if amount_raw:
+        # Convert to millions with 1 decimal place if ≥ 1M, else thousands
+        try:
+            amount_num = float(amount_raw)
+        except (TypeError, ValueError):
+            amount_num = None
+
+        if amount_num is not None:
+            currency_sym = {"USD": "$", "EUR": "€", "GBP": "£"}.get(currency, currency + " ")
+            if amount_num >= 1_000_000:
+                amount_str = f"{currency_sym}{amount_num / 1_000_000:.1f}M"
+            elif amount_num >= 1_000:
+                amount_str = f"{currency_sym}{amount_num / 1_000:.0f}K"
+            else:
+                amount_str = f"{currency_sym}{amount_num:.0f}"
+
+    funding_amount = " ".join(filter(None, [amount_str, funding_type, f"({year})" if year else ""]))
+
+    return funding_status, funding_amount
+
+
 def fetch_company_posts(linkedin_url: str, max_posts: int = 10) -> list[str]:
     """Fetch recent LinkedIn posts for a company via Apify harvestapi/linkedin-company-posts.
 
@@ -256,10 +352,8 @@ def fetch_company_posts(linkedin_url: str, max_posts: int = 10) -> list[str]:
     items = _apify_run_sync(
         "harvestapi/linkedin-company-posts",
         {
-            "urls": [linkedin_url],
+            "targetUrls": [linkedin_url],
             "maxPosts": max_posts,
-            "scrapeReactions": False,
-            "scrapeComments": False,
         },
     )
 

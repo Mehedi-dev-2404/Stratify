@@ -54,15 +54,17 @@ structured JSON summary. Be factual, concise, and never hallucinate.
 
 4. funding_status: One of "Funded", "Bootstrapped", "Public" — or empty string
    "" if funding cannot be verified from the provided sources. Do NOT use
-   "Unknown", "N/A", or any other placeholder. Cross-check the linkedin_profile
-   funding_status field against the web search snippets. If both agree, use that
-   value. If they conflict, use the more specific/sourced value and set
-   funding_confidence to "Conflicting". If neither source contains funding
-   information, return "".
+   "Unknown", "N/A", or any other placeholder.
 
-5. funding_amount: The most recent total or round amount (e.g. "$21M Series A").
+5. funding_amount: The MOST RECENT round amount (e.g. "$21M Series A").
    Return empty string "" if unverified. Never guess. Never return "Unknown",
    "N/A", or any placeholder.
+
+   Date-precedence rule (IMPORTANT): LinkedIn profile funding data includes an
+   announcedOn date (year embedded in the funding_amount string). Web search
+   snippets may reference a MORE RECENT round. When the two sources describe
+   DIFFERENT rounds or dates, always use whichever cites the LATER date/year.
+   Do not assume LinkedIn is authoritative — it can be stale by months or years.
 
 6. funding_confidence: Exactly one of these four values — no other values allowed:
    - "Verified"    — a specific dollar/euro amount AND a round type (e.g. "Series A",
@@ -72,8 +74,8 @@ structured JSON summary. Be factual, concise, and never hallucinate.
                      but round type is missing.
    - "Unverified"  — no source contained explicit funding information. In this case
                      funding_status AND funding_amount MUST both be "".
-   - "Conflicting" — sources gave different amounts or rounds; use the most
-                     specific/recent value in funding_status and funding_amount.
+   - "Conflicting" — sources described different rounds or dates; the most recent
+                     value is used in funding_status and funding_amount.
 
 ## Output format
 Return ONLY valid JSON with these exact keys — no markdown fences, no extra text:
