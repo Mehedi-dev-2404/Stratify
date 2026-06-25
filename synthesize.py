@@ -77,6 +77,16 @@ structured JSON summary. Be factual, concise, and never hallucinate.
    - "Conflicting" — sources described different rounds or dates; the most recent
                      value is used in funding_status and funding_amount.
 
+7. funding_source_url: The URL of the specific web search snippet from which you
+   derived funding_amount (or confirmed the most recent round).
+   - If funding_amount came from a numbered web snippet above, return that
+     snippet's exact URL.
+   - If funding_confidence is "Conflicting" and the web search snippet had the
+     more recent date (per the date-precedence rule), return that snippet's URL.
+   - If no web search snippets were available, or funding came from LinkedIn
+     profile data only, return "".
+   - Return "" if funding_amount is empty string.
+
 ## Output format
 Return ONLY valid JSON with these exact keys — no markdown fences, no extra text:
 {{
@@ -85,7 +95,8 @@ Return ONLY valid JSON with these exact keys — no markdown fences, no extra te
   "category": "...",
   "funding_status": "...",
   "funding_amount": "...",
-  "funding_confidence": "..."
+  "funding_confidence": "...",
+  "funding_source_url": "..."
 }}
 """.strip()
 
@@ -112,6 +123,7 @@ _MOCK_SYNTHESIS_RESULT = {
     "funding_status": "Funded",
     "funding_amount": "$21M Series A",
     "funding_confidence": "Verified",
+    "funding_source_url": "https://techcrunch.com/2019/03/numerai-series-a-21-million",
 }
 
 # ---------------------------------------------------------------------------
@@ -126,15 +138,16 @@ def synthesize_company(raw_data: dict) -> dict:
         raw_data: Dict with keys:
             - name (str)
             - domain (str)
-            - linkedin_profile (dict)      — from fetch_company_linkedin(), or {}
-            - linkedin_posts (list[str])   — from fetch_company_posts(), or []
-            - website_text (str)           — from fetch_website_text()
-            - funding_snippets (list[str]) — from fetch_funding_web_search(), or []
+            - linkedin_profile (dict)       — from fetch_company_linkedin(), or {}
+            - linkedin_posts (list[str])    — from fetch_company_posts(), or []
+            - website_text (str)            — from fetch_website_text()
+            - funding_snippets (list[dict]) — from fetch_funding_web_search(), or []
+              Each dict has "url" and "content" keys.
 
     Returns:
         dict with keys: name, domain, website_summary, linkedin_summary,
         category, funding_status, funding_amount, funding_confidence,
-        last_updated.
+        funding_source_url, last_updated.
     """
     if MOCK_MODE:
         # Validate mock category is in allowed list (guards against fixture drift)
@@ -166,15 +179,34 @@ def synthesize_company(raw_data: dict) -> dict:
     website_text = raw_data.get("website_text", "").strip()
     funding_snippets = raw_data.get("funding_snippets", [])
 
+    # Normalize: coerce any plain strings to {url, content} dicts so the list
+    # is always uniform even when mixed (e.g. founder-signal strings + Tavily dicts)
+    normalized_snippets: list[dict] = []
+    for item in funding_snippets:
+        if isinstance(item, str):
+            normalized_snippets.append({"url": "", "content": item})
+        elif isinstance(item, dict):
+            normalized_snippets.append(
+                {"url": item.get("url", ""), "content": item.get("content", "")}
+            )
+    funding_snippets = normalized_snippets
+
+    if funding_snippets:
+        # Format as numbered list with explicit source URLs so Claude can cite them
+        formatted_lines = []
+        for i, s in enumerate(funding_snippets, 1):
+            url = s.get("url", "")
+            content = s.get("content", "")
+            formatted_lines.append(f"[{i}] URL: {url}\nContent: {content}")
+        funding_snippets_text = "\n\n".join(formatted_lines)
+    else:
+        funding_snippets_text = "(No funding data available)"
+
     prompt = SYNTHESIS_PROMPT.format(
         linkedin_profile=linkedin_profile_text,
         linkedin_posts=linkedin_posts_text,
         website_text=website_text or "(No website text available)",
-        funding_snippets=(
-            "\n\n".join(funding_snippets)
-            if funding_snippets
-            else "(No funding data available)"
-        ),
+        funding_snippets=funding_snippets_text,
         categories=", ".join(CATEGORIES),
     )
 
@@ -237,6 +269,14 @@ def synthesize_company(raw_data: dict) -> dict:
         result["funding_status"] = ""
         result["funding_amount"] = ""
 
+    # Guard: funding_source_url must be a string (Claude may omit the key)
+    funding_source_url = result.get("funding_source_url", "") or ""
+    if not isinstance(funding_source_url, str):
+        funding_source_url = ""
+    # If funding is unverified, there is no valid source URL
+    if result["funding_confidence"] == "Unverified":
+        funding_source_url = ""
+
     return {
         "name": raw_data.get("name", ""),
         "domain": raw_data.get("domain", ""),
@@ -246,5 +286,6 @@ def synthesize_company(raw_data: dict) -> dict:
         "funding_status": result.get("funding_status", ""),
         "funding_amount": result.get("funding_amount", ""),
         "funding_confidence": result["funding_confidence"],
+        "funding_source_url": funding_source_url,
         "last_updated": date.today().isoformat(),
     }

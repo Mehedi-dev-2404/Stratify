@@ -1,7 +1,11 @@
 name,domain,error
-Ahead Innovation Labs,www.aheadinnovationlabs.com,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []
-Aiera,aiera.com,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []
-Alphasense,www.alpha-sense.com,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []
-AlphaWatch AI,alphawatch.ai,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []
-Axyon AI,axyon.ai,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []
-Batonics,www.batonics.com,RuntimeError: Apify actor 'harvestapi/linkedin-company' failed (201): []
+Ahead Innovation Labs,www.aheadinnovationlabs.com,AttributeError: 'str' object has no attribute 'get'
+Aiera,aiera.com,AttributeError: 'str' object has no attribute 'get'
+Alpharepo,www.alpharepo.com,AttributeError: 'str' object has no attribute 'get'
+Alphasense,www.alpha-sense.com,AttributeError: 'str' object has no attribute 'get'
+AlphaWatch AI,alphawatch.ai,AttributeError: 'str' object has no attribute 'get'
+AQ22,aq22.ai,AttributeError: 'str' object has no attribute 'get'
+Auquan,www.auquan.com,AttributeError: 'str' object has no attribute 'get'
+Axyon AI,axyon.ai,AttributeError: 'str' object has no attribute 'get'
+Banker,www.banker.so,AttributeError: 'str' object has no attribute 'get'
+Batonics,www.batonics.com,AttributeError: 'str' object has no attribute 'get'

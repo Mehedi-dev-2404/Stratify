@@ -90,7 +90,7 @@ def main() -> None:
         fetch_website_text,
         founder_profile_has_funding_signal,
     )
-    from tavily_client import tavily_search
+    from tavily_client import tavily_search_results
     from sheet_sync import (
         append_to_sheet,
         check_existing,
@@ -195,15 +195,46 @@ def main() -> None:
                 if not (linkedin_has_funding and founder_has_funding):
                     funding_snippets = fetch_funding_web_search(
                         name,
-                        search_fn=lambda q: tavily_search(q, purpose="funding"),
+                        search_fn=lambda q: tavily_search_results(q, purpose="funding"),
                     )
 
                 # If founder profile carries a funding signal, include its text
-                # as an additional funding snippet so Claude can assess it
+                # as an additional funding snippet so Claude can assess it.
+                # Use dict format (url="") to match the list[dict] type from Tavily.
                 if founder_has_funding and founder_profile.get("funding_text"):
-                    funding_snippets.append(
-                        f"[Founder profile signal] {founder_profile['funding_text']}"
-                    )
+                    funding_snippets.append({
+                        "url": "",
+                        "content": f"[Founder profile signal] {founder_profile['funding_text']}",
+                    })
+
+                # ── Deterministic sources + data_notes ───────────────────────
+                # Built here (not inside synthesize_company) because this logic
+                # depends purely on what was fetched, not on what Claude infers.
+
+                _source_parts: list[str] = []
+                if website_text.strip():
+                    _source_parts.append(f"Website: {domain_raw}")
+                if linkedin_url:
+                    _source_parts.append(f"LinkedIn: {linkedin_url}")
+                if linkedin_has_funding and funding_snippets:
+                    _source_parts.append("Funding: LinkedIn + Tavily")
+                elif linkedin_has_funding:
+                    _source_parts.append("Funding: LinkedIn")
+                elif funding_snippets:
+                    _source_parts.append("Funding: Tavily")
+                sources: str = " | ".join(_source_parts)
+
+                _notes: list[str] = []
+                if not website_text.strip():
+                    _notes.append("Website: no extractable text")
+                if not linkedin_url:
+                    _notes.append("LinkedIn: no verified page found")
+                elif not linkedin_posts:
+                    _notes.append("LinkedIn: page found but no recent posts")
+                if not funding_snippets and not linkedin_has_funding and not founder_has_funding:
+                    _notes.append("Funding: no data from any source")
+                data_notes: str = ", ".join(_notes)
+                # ─────────────────────────────────────────────────────────────
 
                 raw = {
                     "name": name,
@@ -214,14 +245,45 @@ def main() -> None:
                     "website_text": website_text,
                     "funding_snippets": funding_snippets,
                     "founder_profile": founder_profile,
+                    "sources": sources,
+                    "data_notes": data_notes,
                     **meta,
                 }
 
                 enriched = synthesize_company(raw)
 
+                # Build specific source attribution with actual URLs for the
+                # funding_source_note column — replaces the generic "Funding: Tavily"
+                # label with the exact URL Claude identified as the evidence source.
+                _specific_parts: list[str] = []
+                if website_text.strip():
+                    _specific_parts.append(f"Website: {domain_raw}")
+                if linkedin_url:
+                    _specific_parts.append(
+                        f"LinkedIn (company funding data): {linkedin_url}"
+                    )
+                _fsurl = enriched.get("funding_source_url", "")
+                if _fsurl:
+                    _flabel = (
+                        "Funding (conflicting — used web search)"
+                        if enriched.get("funding_confidence") == "Conflicting"
+                        else "Funding (web search)"
+                    )
+                    _specific_parts.append(f"{_flabel}: {_fsurl}")
+                elif linkedin_has_funding:
+                    _specific_parts.append(
+                        f"Funding (LinkedIn company profile): {linkedin_url}"
+                    )
+                enriched["funding_source_note"] = " | ".join(_specific_parts)
+
                 save_company_record(slug, raw, enriched)
                 update_index_csv(enriched)
-                append_to_sheet({**enriched, "linkedin_url": linkedin_url})
+                append_to_sheet({
+                    **enriched,
+                    "linkedin_url": linkedin_url,
+                    "sources": sources,
+                    "data_notes": data_notes,
+                })
 
                 print(f"  [DONE]  {name} — category: {enriched.get('category', '?')}")
 

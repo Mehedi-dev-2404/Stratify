@@ -146,18 +146,24 @@ _MOCK_WEBSITE_TEXT = (
     "of former Renaissance Technologies, Two Sigma, and Google DeepMind alumni."
 )
 
-_MOCK_FUNDING_SNIPPETS: list[str] = [
-    (
-        "Numerai raises $21 million Series A led by Union Square Ventures, "
-        "with participation from Placeholder VC and CoinFund. The round will "
-        "fund expansion of the data science tournament platform and grow the "
-        "team. (TechCrunch, March 2019)"
-    ),
-    (
-        "AI hedge fund platform secures fresh capital to scale its crowdsourced "
-        "prediction infrastructure. Investors cited the network effect of 10,000+ "
-        "contributing data scientists as a key moat. (Bloomberg, April 2019)"
-    ),
+_MOCK_FUNDING_SNIPPETS: list[dict] = [
+    {
+        "url": "https://techcrunch.com/2019/03/numerai-series-a-21-million",
+        "content": (
+            "Numerai raises $21 million Series A led by Union Square Ventures, "
+            "with participation from Placeholder VC and CoinFund. The round will "
+            "fund expansion of the data science tournament platform and grow the "
+            "team. (TechCrunch, March 2019)"
+        ),
+    },
+    {
+        "url": "https://bloomberg.com/news/2019/04/ai-hedge-fund-platform-funding",
+        "content": (
+            "AI hedge fund platform secures fresh capital to scale its crowdsourced "
+            "prediction infrastructure. Investors cited the network effect of 10,000+ "
+            "contributing data scientists as a key moat. (Bloomberg, April 2019)"
+        ),
+    },
 ]
 
 # Funding-signal keywords for founder profile screening
@@ -517,33 +523,43 @@ def founder_profile_has_funding_signal(profile: dict) -> bool:
 def fetch_funding_web_search(
     company_name: str,
     search_fn=None,
-) -> list[str]:
+) -> list[dict]:
     """Search the web for funding information about a company.
 
     Args:
         company_name: Human-readable company name.
-        search_fn: Callable[[str], list[str]] that accepts a query string and
-            returns a list of text snippets. Injected by the caller so no
-            specific search API is hardcoded here. Required in real mode;
-            ignored in MOCK_MODE. Example compatible APIs: Tavily, SerpAPI,
-            Brave Search.
+        search_fn: Callable[[str], list[dict]] that accepts a query string and
+            returns a list of result dicts, each with at minimum "url" and
+            "content" keys. Injected by the caller so no specific search API
+            is hardcoded here. Required in real mode; ignored in MOCK_MODE.
+            Example compatible APIs: Tavily, SerpAPI, Brave Search.
 
     Returns:
-        List of raw text snippets mentioning funding rounds, investors, or amounts.
-        Synthesize.py is responsible for interpreting and cross-checking these.
+        List of dicts with "url" and "content" keys — deduplicated across both
+        queries. Synthesize.py is responsible for interpreting and citing.
     """
     slug = _slugify(company_name)
     cache_file = _cache_path(slug, "funding")
 
     if MOCK_MODE:
         if cache_file.exists():
-            return json.loads(cache_file.read_text())
+            cached = json.loads(cache_file.read_text())
+            # Backward compat: old cache stored plain strings
+            if cached and isinstance(cached[0], str):
+                cached = [{"url": "", "content": s} for s in cached]
+            return cached
         cache_file.write_text(json.dumps(_MOCK_FUNDING_SNIPPETS, indent=2))
         return _MOCK_FUNDING_SNIPPETS
 
     # --- Real branch ---
     if cache_file.exists():
-        return json.loads(cache_file.read_text())
+        cached = json.loads(cache_file.read_text())
+        # Backward compat: old cache stored plain strings without URLs
+        if cached and isinstance(cached[0], str):
+            # Stale format — delete and regenerate so URLs are captured
+            cache_file.unlink()
+        else:
+            return cached
 
     if search_fn is None:
         raise ValueError(
@@ -556,15 +572,16 @@ def fetch_funding_web_search(
         f"{company_name} series A B C seed",
     ]
 
-    snippets: list[str] = []
-    seen: set[str] = set()
+    snippets: list[dict] = []
+    seen_content: set[str] = set()
     for query in queries:
         results = search_fn(query)
-        for snippet in results:
-            snippet = snippet.strip()
-            if snippet and snippet not in seen:
-                seen.add(snippet)
-                snippets.append(snippet)
+        for item in results:
+            url = item.get("url", "")
+            content = item.get("content", "").strip()
+            if content and content not in seen_content:
+                seen_content.add(content)
+                snippets.append({"url": url, "content": content})
 
     cache_file.write_text(json.dumps(snippets, indent=2))
     return snippets

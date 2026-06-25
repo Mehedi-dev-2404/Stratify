@@ -2,14 +2,15 @@
 tavily_client.py — Thin Tavily search wrapper for Stratify.
 
 Two public functions:
-  - tavily_search(query, purpose)        → list[str]   (content snippets)
+  - tavily_search(query, purpose)        → list[str]   (content snippets only)
   - tavily_search_results(query, purpose) → list[dict]  (raw result dicts w/ url+content)
 
 Both are cache-first (raw_cache/{slug}_tavily_{purpose}.json).
 Both are no-ops (return []) when TAVILY_API_KEY is not set or in mock mode.
 
-Use tavily_search      as search_fn for fetch_funding_web_search().
-Use tavily_search_results as search_fn for resolve_company_linkedin().
+Use tavily_search_results as search_fn for BOTH fetch_funding_web_search() AND
+resolve_company_linkedin() — it preserves source URLs needed for provenance.
+tavily_search (strings only) is kept for backward compatibility but not preferred.
 """
 
 from __future__ import annotations
