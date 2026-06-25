@@ -275,6 +275,8 @@ def main() -> None:
                         f"Funding (LinkedIn company profile): {linkedin_url}"
                     )
                 enriched["funding_source_note"] = " | ".join(_specific_parts)
+                # Mirror to `sources` so the sheet column gets specific URLs
+                sources = enriched["funding_source_note"]
 
                 save_company_record(slug, raw, enriched)
                 update_index_csv(enriched)
