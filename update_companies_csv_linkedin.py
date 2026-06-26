@@ -25,6 +25,12 @@ from config import API_MOCK_MODE as MOCK_MODE
 _BASE = Path(__file__).parent
 _COMPANIES_CSV = _BASE / "companies.csv"
 _FAILURES_CSV = _BASE / "linkedin_resolution_failures.csv"
+_RESOLUTION_SOURCE_CSV = _BASE / "linkedin_resolution_source.csv"
+_CLAY_PENDING_CSV = _BASE / "clay_pending.csv"
+
+_RESOLUTION_SOURCE_FIELDNAMES = [
+    "company_name", "domain", "linkedin_company_url", "source", "timestamp"
+]
 
 # Tavily is now the default search backend for LinkedIn URL resolution.
 _SEARCH_FN = lambda q: tavily_search_results(q, purpose="linkedin_url")
@@ -124,6 +130,55 @@ def _extract_slug(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Clay fallback validator
+# ---------------------------------------------------------------------------
+
+def call_clay_fallback(
+    company_name: str,
+    domain: str,
+    clay_data: dict,
+) -> tuple[str, str]:
+    """Validate Clay's returned company data and extract a LinkedIn URL if valid.
+
+    Does NOT call Clay's API. The caller runs Clay externally and passes the
+    resulting dict here for validation. Clay is a second source — the same
+    name/domain match rules apply as for our_resolver.
+
+    Expected keys in clay_data (others are ignored):
+      - "linkedin_url" or "linkedin_company_url" or "linkedin": the URL Clay found
+      - "name": Clay's matched company name (used as context for domain validation)
+      - "website": Clay's matched website (used as domain context)
+
+    Args:
+        company_name: Original company name from companies.csv.
+        domain: Original domain from companies.csv.
+        clay_data: Dict returned by Clay's find-and-enrich-company endpoint.
+
+    Returns:
+        (url, rejection_reason) — url is "" on failure/rejection.
+    """
+    from resolve_linkedin import validate_candidate_url
+
+    candidate_url = (
+        clay_data.get("linkedin_url")
+        or clay_data.get("linkedin_company_url")
+        or clay_data.get("linkedin")
+        or ""
+    ).strip()
+
+    if not candidate_url:
+        return "", "Clay returned no LinkedIn URL"
+
+    context = " ".join(filter(None, [
+        clay_data.get("name", ""),
+        clay_data.get("website", ""),
+        domain,
+    ]))
+
+    return validate_candidate_url(company_name, domain, candidate_url, context)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -173,6 +228,7 @@ def main(limit: int | None = TRIAL_LIMIT) -> None:
     resolved_count = 0
     failed_count = 0
     processed = 0
+    newly_resolved: list[dict] = []
 
     for row in rows:
         if row.get("linkedin_company_url", "").strip():
@@ -196,6 +252,13 @@ def main(limit: int | None = TRIAL_LIMIT) -> None:
             print(f"  {name:40} {status}")
             if url:
                 resolved_count += 1
+                newly_resolved.append({
+                    "company_name": name,
+                    "domain": domain,
+                    "linkedin_company_url": url,
+                    "source": "our_resolver",
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                })
             else:
                 failed_count += 1
                 all_failures.append({
@@ -221,7 +284,34 @@ def main(limit: int | None = TRIAL_LIMIT) -> None:
         writer.writeheader()
         writer.writerows(rows)
 
-    # Step 5: Append all failures
+    # Step 5: Track resolution sources + export Clay pending list
+    if newly_resolved:
+        source_exists = _RESOLUTION_SOURCE_CSV.exists()
+        with _RESOLUTION_SOURCE_CSV.open("a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=_RESOLUTION_SOURCE_FIELDNAMES)
+            if not source_exists:
+                writer.writeheader()
+            writer.writerows(newly_resolved)
+        print(f"  Logged {len(newly_resolved)} our_resolver hit(s) → {_RESOLUTION_SOURCE_CSV.name}")
+
+    still_blank = [
+        {"company_name": r.get("name", ""), "domain": r.get("domain", "")}
+        for r in rows
+        if not r.get("linkedin_company_url", "").strip()
+    ]
+    if still_blank:
+        with _CLAY_PENDING_CSV.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["company_name", "domain"])
+            writer.writeheader()
+            writer.writerows(still_blank)
+        print(
+            f"  {len(still_blank)} company(ies) still blank → "
+            f"{_CLAY_PENDING_CSV.name} ready for Clay fallback"
+        )
+    else:
+        print("  No companies remaining blank — Clay fallback not needed.")
+
+    # Step 6: Append all failures
     if all_failures:
         failures_exist = _FAILURES_CSV.exists()
         with _FAILURES_CSV.open("a", newline="") as f:

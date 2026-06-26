@@ -283,3 +283,33 @@ def resolve_company_linkedin(
     cache_file.write_text(json.dumps(cache_payload, indent=2))
 
     return best_url, rejection_reason if not best_url else ""
+
+
+def validate_candidate_url(
+    company_name: str,
+    domain: str,
+    url: str,
+    context: str = "",
+) -> tuple[str, str]:
+    """Validate a LinkedIn company URL against name and domain signals.
+
+    Applies the same scoring rules as resolve_company_linkedin — bidirectional
+    slug/name token overlap ≥70% OR domain present in context.
+
+    Args:
+        company_name: Human-readable company name.
+        domain: Company website domain.
+        url: Candidate LinkedIn company URL to validate.
+        context: Optional text surrounding the URL (e.g. page title + snippet)
+            used for domain-in-context signal.
+
+    Returns:
+        (url, "") if valid, ("", rejection_reason) if rejected.
+    """
+    if not _is_valid_company_url(url):
+        return "", f"not a valid linkedin.com/company/* URL: {url!r}"
+    candidate = {"url": url, "title": "", "content": context}
+    score, reason = _score_candidate(candidate, company_name, domain)
+    if score > 0:
+        return url, ""
+    return "", reason

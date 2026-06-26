@@ -18,3 +18,15 @@ Banker,https://www.banker.so/,"found candidate(s) [american-banker, bankers-fina
 Captide,https://www.captide.ai/,no linkedin.com/company/* URLs found in search results,2026-06-24T23:06:15.531244
 Carousel,https://usecarousel.com/,no linkedin.com/company/* URLs found in search results,2026-06-24T23:06:15.531394
 Catalyst,https://catalyst.app/,"found candidate(s) [insidecatalyst, catalystinc, catalyst-marketing-llc] but none matched name/domain — no linkedin.com/company/* URLs found in search results",2026-06-24T23:06:17.859767
+Ahead Innovation Labs,https://www.aheadinnovationlabs.com/,found candidate(s) [innovative-labs] but none matched name/domain — no linkedin.com/company/* URLs found in search results,2026-06-26T20:36:07.404109
+Alpharepo,https://www.alpharepo.com/,"found candidate(s) [alpharepo), alphainvestmentsolutions, alpha-point] but none matched name/domain — no linkedin.com/company/* URLs found in search results",2026-06-26T20:36:07.404590
+AQ22,https://aq22.ai/,"found candidate(s) [twentytwofresno, base22-llc] but none matched name/domain — no linkedin.com/company/* URLs found in search results",2026-06-26T20:36:07.404776
+Auquan,https://www.auquan.com/,found candidate(s) [gofundme)] but none matched name/domain — no linkedin.com/company/* URLs found in search results,2026-06-26T20:36:07.405371
+Banker,https://www.banker.so/,"found candidate(s) [american-banker, bankers-financial-corporation, bankers'-bank] but none matched name/domain — no linkedin.com/company/* URLs found in search results",2026-06-26T20:36:07.405609
+Captide,https://www.captide.ai/,no linkedin.com/company/* URLs found in search results,2026-06-26T20:36:07.405891
+Carousel,https://usecarousel.com/,no linkedin.com/company/* URLs found in search results,2026-06-26T20:36:07.406063
+Catalyst,https://catalyst.app/,"found candidate(s) [insidecatalyst, catalystinc, catalyst-marketing-llc] but none matched name/domain — no linkedin.com/company/* URLs found in search results",2026-06-26T20:36:07.406236
+Causality AI,https://causaility.ai/,"found candidate(s) [causify-ai, causify-ai, causify-ai)](https:] but none matched name/domain — no linkedin.com/company/* URLs found in search results",2026-06-26T20:36:09.483008
+Ahead Innovation Labs,aheadinnovationlabs.com,clay_fallback rejected: slug 'ahead-innovation-laboratories' doesn't bidirectionally match 'Ahead Innovation Labs' and domain 'aheadinnovationlabs.com' not found in result context,2026-06-26T20:39:34.029564
+Carousel,usecarousel.com,clay_fallback rejected: slug 'carousel-tech' doesn't bidirectionally match 'Carousel' and domain 'usecarousel.com' not found in result context,2026-06-26T20:39:34.030196
+Causality AI,causaility.ai,clay_fallback rejected: slug 'causaility-ai' doesn't bidirectionally match 'Causality AI' and domain 'causaility.ai' not found in result context,2026-06-26T20:39:34.030220

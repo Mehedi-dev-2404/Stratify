@@ -48,9 +48,24 @@ structured JSON summary. Be factual, concise, and never hallucinate.
    linkedin_summary to empty string "" — do NOT infer from the website or
    company name.
 
-3. category: Classify the company into exactly one of the following categories.
-   Use the label verbatim — do not invent new categories.
+3. category: Identify which team or function within a financial institution is
+   the PRIMARY USER (buyer and daily operator) of this product, then classify
+   into exactly one of the following categories. Use the label verbatim — do
+   not invent new categories.
    Categories: {categories}
+
+   Guidance for picking the primary-user category:
+   - "Primary user" means the team most likely to be the actual buyer and
+     heaviest daily user — not just any team that might see the output.
+   - If the product could serve multiple teams, pick the team that would be the
+     actual buyer and primary daily operator.
+   - Examples: stress-testing / scenario analysis / credit risk → Risk Teams;
+     KYC / AML / regulatory reporting / trade surveillance → Compliance Teams;
+     alpha signals / trade execution / portfolio construction → Portfolio Managers / Traders;
+     earnings research / document search / due diligence → Research Analysts;
+     data pipelines / alternative data / quant model infrastructure → Quant / Data Engineering;
+     LP reporting / investor communications / capital raising → IR / Investor Relations;
+     bookkeeping / accounting / back-office finance workflows → Finance / Accounting.
 
 4. funding_status: One of "Funded", "Bootstrapped", "Public" — or empty string
    "" if funding cannot be verified from the provided sources. Do NOT use
@@ -119,7 +134,7 @@ _MOCK_SYNTHESIS_RESULT = {
         "and participation in quant finance conferences, signalling an active "
         "research culture and growth phase."
     ),
-    "category": "AI Trading/Alpha Generation",
+    "category": "Portfolio Managers / Traders",
     "funding_status": "Funded",
     "funding_amount": "$21M Series A",
     "funding_confidence": "Verified",
