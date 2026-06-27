@@ -22,7 +22,7 @@ _MOCK_SHEET_CSV = _BASE / "mock_sheet.csv"
 
 _MOCK_SHEET_FIELDNAMES = [
     "name", "domain", "website_summary", "linkedin_summary",
-    "category", "funding_status", "funding_amount",
+    "category", "primary_user_summary", "funding_status", "funding_amount",
     "funding_confidence", "sources", "data_notes", "last_updated",
 ]
 
@@ -88,6 +88,7 @@ def main() -> None:
                 "website_summary": e.get("website_summary", ""),
                 "linkedin_summary": e.get("linkedin_summary", ""),
                 "category": e.get("category", ""),
+                "primary_user_summary": e.get("primary_user_summary", ""),
                 "funding_status": e.get("funding_status", ""),
                 "funding_amount": e.get("funding_amount", ""),
                 "funding_confidence": e.get("funding_confidence", ""),

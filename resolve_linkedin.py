@@ -41,6 +41,20 @@ _LINKEDIN_COMPANY_RE = re.compile(
     r"https?://(?:www\.)?linkedin\.com/company/[^\s\"'<>]+"
 )
 
+# Synonym map: normalises common name abbreviations before token comparison so
+# that "labs"/"lab" match "laboratories"/"laboratory" in slugs (and vice versa).
+_TOKEN_SYNONYMS: dict[str, str] = {
+    "labs": "laboratories",
+    "lab": "laboratory",
+}
+
+# Generic tokens that LinkedIn often appends to slugs but that are NOT meaningful
+# distinguishers (e.g. "carousel-tech" for a company called "Carousel").
+# Excluded from the slug_coverage denominator to avoid penalising valid matches.
+_GENERIC_SLUG_TOKENS: frozenset[str] = frozenset({
+    "tech", "ai", "inc", "hq", "io", "co", "app", "group", "api",
+})
+
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
@@ -66,21 +80,42 @@ def _url_slug_matches_name(url: str, company_name: str) -> bool:
 
     Requires ≥70% token coverage in BOTH directions to avoid:
       "banker" matching "american-banker" (slug_coverage = 0.5, fails).
+
+    Two accommodations applied before scoring:
+      1. Synonym normalisation — "labs"→"laboratories" so abbreviation variants
+         in names and slugs are treated as identical tokens.
+      2. Generic-suffix exclusion — tokens like "tech", "ai", "inc" that appear
+         in the slug but NOT in the name are excluded from the slug_coverage
+         denominator, preventing them from penalising otherwise-strong matches
+         (e.g. "carousel-tech" for a company named "Carousel").
     """
     raw_slug = _get_url_slug(url)
     if not raw_slug:
         return False
-    slug_tokens = {t for t in re.split(r"[-_]", raw_slug.lower()) if len(t) > 1}
-    name_tokens = {
+
+    slug_tokens_raw = {t for t in re.split(r"[-_]", raw_slug.lower()) if len(t) > 1}
+    name_tokens_raw = {
         t
         for t in re.sub(r"[^a-z0-9]", " ", company_name.lower()).split()
         if len(t) > 1
     }
-    if not name_tokens or not slug_tokens:
+    if not name_tokens_raw or not slug_tokens_raw:
         return False
+
+    # Apply synonym normalisation to both sets
+    slug_tokens = {_TOKEN_SYNONYMS.get(t, t) for t in slug_tokens_raw}
+    name_tokens = {_TOKEN_SYNONYMS.get(t, t) for t in name_tokens_raw}
+
     overlap = name_tokens & slug_tokens
     name_coverage = len(overlap) / len(name_tokens)
-    slug_coverage = len(overlap) / len(slug_tokens)
+
+    # Exclude generic noise tokens from the slug denominator only when they are
+    # NOT already present in the (normalised) name — preserving them when they
+    # ARE meaningful (e.g. company actually called "AI Tech").
+    generic_noise = _GENERIC_SLUG_TOKENS - name_tokens
+    slug_tokens_for_coverage = slug_tokens - generic_noise or slug_tokens
+    slug_coverage = len(overlap) / len(slug_tokens_for_coverage)
+
     return name_coverage >= 0.7 and slug_coverage >= 0.7
 
 
@@ -91,6 +126,27 @@ def _domain_in_context(domain: str, context: str) -> bool:
     if not bare or "." not in bare:
         return False
     return bare in context.lower()
+
+
+def _domain_slug_direct_match(domain: str, url: str) -> bool:
+    """Check if the domain directly encodes the LinkedIn slug.
+
+    LinkedIn often assigns slugs of the form <name>-<tld> for companies whose
+    name matches their domain (e.g. causaility.ai → causaility-ai). Converting
+    the bare domain (dots → hyphens) and comparing to the slug catches these
+    cases without requiring name-token overlap.
+
+    This check is deliberately exact (no substring) to prevent false positives
+    like "banker.so" → "banker-so" matching "american-banker".
+    """
+    raw_slug = _get_url_slug(url)
+    if not raw_slug:
+        return False
+    parsed = urlparse(domain.strip().rstrip("/"))
+    bare = (parsed.netloc or domain.strip()).lower().lstrip("www.")
+    if not bare or "." not in bare:
+        return False
+    return bare.replace(".", "-") == raw_slug.lower()
 
 
 def _extract_candidates_with_context(
@@ -181,13 +237,15 @@ def _score_candidate(
 
     slug_ok = _url_slug_matches_name(url, company_name)
     domain_ok = _domain_in_context(domain, context)
+    domain_slug_ok = _domain_slug_direct_match(domain, url)
 
-    score = (2 if slug_ok else 0) + (2 if domain_ok else 0)
+    score = (2 if slug_ok else 0) + (2 if domain_ok else 0) + (2 if domain_slug_ok else 0)
 
     if score == 0:
         reason = (
             f"slug '{_get_url_slug(url)}' doesn't bidirectionally match "
-            f"'{company_name}' and domain '{domain}' not found in result context"
+            f"'{company_name}', domain '{domain}' not found in result context, "
+            f"and domain doesn't directly map to slug"
         )
         return 0, reason
 

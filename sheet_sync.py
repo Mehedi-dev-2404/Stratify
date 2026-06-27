@@ -20,7 +20,7 @@ _MOCK_SHEET_CSV = _BASE / "mock_sheet.csv"
 
 _MOCK_SHEET_FIELDNAMES = [
     "name", "domain", "website_summary", "linkedin_summary",
-    "category", "funding_status", "funding_amount",
+    "category", "primary_user_summary", "funding_status", "funding_amount",
     "funding_confidence", "sources", "data_notes", "last_updated",
 ]
 

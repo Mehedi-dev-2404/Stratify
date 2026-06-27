@@ -67,11 +67,17 @@ structured JSON summary. Be factual, concise, and never hallucinate.
      LP reporting / investor communications / capital raising → IR / Investor Relations;
      bookkeeping / accounting / back-office finance workflows → Finance / Accounting.
 
-4. funding_status: One of "Funded", "Bootstrapped", "Public" — or empty string
+4. primary_user_summary (1 sentence): Who at a financial institution is the
+   primary daily user of this product? Be specific about the role and context —
+   write for a salesperson. No filler. Example: "Risk managers at hedge funds
+   use this to stress-test portfolios against synthetic market scenarios not
+   covered by historical data."
+
+5. funding_status: One of "Funded", "Bootstrapped", "Public" — or empty string
    "" if funding cannot be verified from the provided sources. Do NOT use
    "Unknown", "N/A", or any other placeholder.
 
-5. funding_amount: The MOST RECENT round amount (e.g. "$21M Series A").
+6. funding_amount: The MOST RECENT round amount (e.g. "$21M Series A").
    Return empty string "" if unverified. Never guess. Never return "Unknown",
    "N/A", or any placeholder.
 
@@ -81,7 +87,7 @@ structured JSON summary. Be factual, concise, and never hallucinate.
    DIFFERENT rounds or dates, always use whichever cites the LATER date/year.
    Do not assume LinkedIn is authoritative — it can be stale by months or years.
 
-6. funding_confidence: Exactly one of these four values — no other values allowed:
+7. funding_confidence: Exactly one of these four values — no other values allowed:
    - "Verified"    — a specific dollar/euro amount AND a round type (e.g. "Series A",
                      "Seed", "IPO") are EXPLICITLY stated in at least one source.
                      Vague language like "raised significant funding" does NOT qualify.
@@ -92,7 +98,7 @@ structured JSON summary. Be factual, concise, and never hallucinate.
    - "Conflicting" — sources described different rounds or dates; the most recent
                      value is used in funding_status and funding_amount.
 
-7. funding_source_url: The URL of the specific web search snippet from which you
+8. funding_source_url: The URL of the specific web search snippet from which you
    derived funding_amount (or confirmed the most recent round).
    - If funding_amount came from a numbered web snippet above, return that
      snippet's exact URL.
@@ -108,6 +114,7 @@ Return ONLY valid JSON with these exact keys — no markdown fences, no extra te
   "website_summary": "...",
   "linkedin_summary": "...",
   "category": "...",
+  "primary_user_summary": "...",
   "funding_status": "...",
   "funding_amount": "...",
   "funding_confidence": "...",
@@ -135,6 +142,11 @@ _MOCK_SYNTHESIS_RESULT = {
         "research culture and growth phase."
     ),
     "category": "Portfolio Managers / Traders",
+    "primary_user_summary": (
+        "Portfolio managers and quant researchers at institutional asset managers "
+        "use this platform to generate alpha signals from alternative data sources "
+        "including satellite imagery, transaction flows, and earnings call NLP."
+    ),
     "funding_status": "Funded",
     "funding_amount": "$21M Series A",
     "funding_confidence": "Verified",
@@ -298,6 +310,7 @@ def synthesize_company(raw_data: dict) -> dict:
         "website_summary": result.get("website_summary", ""),
         "linkedin_summary": result.get("linkedin_summary", ""),
         "category": result["category"],
+        "primary_user_summary": result.get("primary_user_summary", ""),
         "funding_status": result.get("funding_status", ""),
         "funding_amount": result.get("funding_amount", ""),
         "funding_confidence": result["funding_confidence"],
