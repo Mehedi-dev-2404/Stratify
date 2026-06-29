@@ -108,6 +108,22 @@ structured JSON summary. Be factual, concise, and never hallucinate.
      profile data only, return "".
    - Return "" if funding_amount is empty string.
 
+9. contradiction_notes: Flag a genuine factual conflict between the website and
+   LinkedIn posts about the SAME specific claim — e.g. target customer, product
+   type, pricing model, or deployment model — stated differently by each source.
+   Rules (be strict — false positives are worse than missed ones):
+   - Default: empty string "". Most companies will have no entry here.
+   - Website copy and LinkedIn posts naturally cover different topics and use
+     different tone. Do NOT flag: absence-of-mention, differing emphasis,
+     marketing language vs. casual language, or general vs. specific framing.
+     These are normal, not contradictions.
+   - Only flag when the SAME factual claim is explicitly made in BOTH sources
+     and the two versions are mutually incompatible.
+   - If either website_summary or linkedin_summary is empty string (no data
+     available), set contradiction_notes to "" — no comparison is possible.
+   - If triggered, output exactly one sentence in this form:
+     "Website: [claim]. LinkedIn: [conflicting claim]."
+
 ## Output format
 Return ONLY valid JSON with these exact keys — no markdown fences, no extra text:
 {{
@@ -118,7 +134,8 @@ Return ONLY valid JSON with these exact keys — no markdown fences, no extra te
   "funding_status": "...",
   "funding_amount": "...",
   "funding_confidence": "...",
-  "funding_source_url": "..."
+  "funding_source_url": "...",
+  "contradiction_notes": "..."
 }}
 """.strip()
 
@@ -151,6 +168,7 @@ _MOCK_SYNTHESIS_RESULT = {
     "funding_amount": "$21M Series A",
     "funding_confidence": "Verified",
     "funding_source_url": "https://techcrunch.com/2019/03/numerai-series-a-21-million",
+    "contradiction_notes": "",
 }
 
 # ---------------------------------------------------------------------------
@@ -241,6 +259,7 @@ def synthesize_company(raw_data: dict) -> dict:
     message = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1024,
+        temperature=0,
         messages=[{"role": "user", "content": prompt}],
     )
     raw_text = message.content[0].text.strip()
@@ -304,11 +323,19 @@ def synthesize_company(raw_data: dict) -> dict:
     if result["funding_confidence"] == "Unverified":
         funding_source_url = ""
 
+    # Guard: contradiction_notes must be a string; blank if either summary is empty
+    contradiction_notes = result.get("contradiction_notes", "") or ""
+    if not isinstance(contradiction_notes, str):
+        contradiction_notes = ""
+    if not result.get("website_summary", "") or not result.get("linkedin_summary", ""):
+        contradiction_notes = ""
+
     return {
         "name": raw_data.get("name", ""),
         "domain": raw_data.get("domain", ""),
         "website_summary": result.get("website_summary", ""),
         "linkedin_summary": result.get("linkedin_summary", ""),
+        "contradiction_notes": contradiction_notes,
         "category": result["category"],
         "primary_user_summary": result.get("primary_user_summary", ""),
         "funding_status": result.get("funding_status", ""),

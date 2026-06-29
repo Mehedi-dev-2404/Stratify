@@ -21,7 +21,7 @@ _COMPANIES_DIR = _BASE / "research_db" / "companies"
 _MOCK_SHEET_CSV = _BASE / "mock_sheet.csv"
 
 _MOCK_SHEET_FIELDNAMES = [
-    "name", "domain", "website_summary", "linkedin_summary",
+    "name", "domain", "website_summary", "linkedin_summary", "contradiction_notes",
     "category", "primary_user_summary", "funding_status", "funding_amount",
     "funding_confidence", "sources", "data_notes", "last_updated",
 ]
@@ -87,6 +87,7 @@ def main() -> None:
                 "domain": e.get("domain", ""),
                 "website_summary": e.get("website_summary", ""),
                 "linkedin_summary": e.get("linkedin_summary", ""),
+                "contradiction_notes": e.get("contradiction_notes", ""),
                 "category": e.get("category", ""),
                 "primary_user_summary": e.get("primary_user_summary", ""),
                 "funding_status": e.get("funding_status", ""),
