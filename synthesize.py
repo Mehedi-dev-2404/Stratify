@@ -42,13 +42,22 @@ structured JSON summary. Be factual, concise, and never hallucinate.
    jargon, no filler phrases like "leverages cutting-edge AI". Be specific and
    concrete. If no website text is available, set to empty string "".
 
-2. linkedin_summary (max 2 sentences, plain language): What has this company been
-   doing lately — hiring, launching, announcing? Same plain-language rule as
-   above. If the LinkedIn posts section says no data is available, set
-   linkedin_summary to empty string "" — do NOT infer from the website or
-   company name.
+2. linkedin_product_summary (max 2 sentences, plain language): Summarise only
+   LinkedIn posts that describe product features, capabilities, use cases, or
+   integrations. Same plain-language rule — no jargon, no filler. If no posts
+   discuss product specifically, set to empty string "". If the LinkedIn posts
+   section says no data is available, set to empty string "" — do NOT infer from
+   the website or company name.
 
-3. category: Identify which team or function within a financial institution is
+3. linkedin_other_summary (max 2 sentences, plain language): Summarise everything
+   else from the LinkedIn posts — events, hiring, fundraising announcements,
+   partnerships, thought leadership. If all posts are product-focused, set to
+   empty string "". If the LinkedIn posts section says no data is available, set
+   to empty string "".
+
+   (Original instruction numbering shifts below — renumbered to match.)
+
+4. category: Identify which team or function within a financial institution is
    the PRIMARY USER (buyer and daily operator) of this product, then classify
    into exactly one of the following categories. Use the label verbatim — do
    not invent new categories.
@@ -67,17 +76,17 @@ structured JSON summary. Be factual, concise, and never hallucinate.
      LP reporting / investor communications / capital raising → IR / Investor Relations;
      bookkeeping / accounting / back-office finance workflows → Finance / Accounting.
 
-4. primary_user_summary (1 sentence): Who at a financial institution is the
+5. primary_user_summary (1 sentence): Who at a financial institution is the
    primary daily user of this product? Be specific about the role and context —
    write for a salesperson. No filler. Example: "Risk managers at hedge funds
    use this to stress-test portfolios against synthetic market scenarios not
    covered by historical data."
 
-5. funding_status: One of "Funded", "Bootstrapped", "Public" — or empty string
+6. funding_status: One of "Funded", "Bootstrapped", "Public" — or empty string
    "" if funding cannot be verified from the provided sources. Do NOT use
    "Unknown", "N/A", or any other placeholder.
 
-6. funding_amount: The MOST RECENT round amount (e.g. "$21M Series A").
+7. funding_amount: The MOST RECENT round amount (e.g. "$21M Series A").
    Return empty string "" if unverified. Never guess. Never return "Unknown",
    "N/A", or any placeholder.
 
@@ -87,7 +96,7 @@ structured JSON summary. Be factual, concise, and never hallucinate.
    DIFFERENT rounds or dates, always use whichever cites the LATER date/year.
    Do not assume LinkedIn is authoritative — it can be stale by months or years.
 
-7. funding_confidence: Exactly one of these four values — no other values allowed:
+8. funding_confidence: Exactly one of these four values — no other values allowed:
    - "Verified"    — a specific dollar/euro amount AND a round type (e.g. "Series A",
                      "Seed", "IPO") are EXPLICITLY stated in at least one source.
                      Vague language like "raised significant funding" does NOT qualify.
@@ -98,7 +107,7 @@ structured JSON summary. Be factual, concise, and never hallucinate.
    - "Conflicting" — sources described different rounds or dates; the most recent
                      value is used in funding_status and funding_amount.
 
-8. funding_source_url: The URL of the specific web search snippet from which you
+9. funding_source_url: The URL of the specific web search snippet from which you
    derived funding_amount (or confirmed the most recent round).
    - If funding_amount came from a numbered web snippet above, return that
      snippet's exact URL.
@@ -108,27 +117,30 @@ structured JSON summary. Be factual, concise, and never hallucinate.
      profile data only, return "".
    - Return "" if funding_amount is empty string.
 
-9. contradiction_notes: Flag a genuine factual conflict between the website and
-   LinkedIn posts about the SAME specific claim — e.g. target customer, product
-   type, pricing model, or deployment model — stated differently by each source.
-   Rules (be strict — false positives are worse than missed ones):
-   - Default: empty string "". Most companies will have no entry here.
-   - Website copy and LinkedIn posts naturally cover different topics and use
-     different tone. Do NOT flag: absence-of-mention, differing emphasis,
-     marketing language vs. casual language, or general vs. specific framing.
-     These are normal, not contradictions.
-   - Only flag when the SAME factual claim is explicitly made in BOTH sources
-     and the two versions are mutually incompatible.
-   - If either website_summary or linkedin_summary is empty string (no data
-     available), set contradiction_notes to "" — no comparison is possible.
-   - If triggered, output exactly one sentence in this form:
-     "Website: [claim]. LinkedIn: [conflicting claim]."
+10. contradiction_notes: Flag a genuine factual conflict between the website text
+    and the LinkedIn posts (the full raw posts above) about the SAME specific
+    claim — e.g. target customer, product type, pricing model, or deployment
+    model — stated differently by each source.
+    Rules (be strict — false positives are worse than missed ones):
+    - Default: empty string "". Most companies will have no entry here.
+    - Website copy and LinkedIn posts naturally cover different topics and use
+      different tone. Do NOT flag: absence-of-mention, differing emphasis,
+      marketing language vs. casual language, or general vs. specific framing.
+      These are normal, not contradictions.
+    - Only flag when the SAME factual claim is explicitly made in BOTH sources
+      and the two versions are mutually incompatible.
+    - If website_summary is empty string, or if no LinkedIn posts data was
+      available (both linkedin_product_summary and linkedin_other_summary are
+      empty string), set contradiction_notes to "" — no comparison is possible.
+    - If triggered, output exactly one sentence in this form:
+      "Website: [claim]. LinkedIn: [conflicting claim]."
 
 ## Output format
 Return ONLY valid JSON with these exact keys — no markdown fences, no extra text:
 {{
   "website_summary": "...",
-  "linkedin_summary": "...",
+  "linkedin_product_summary": "...",
+  "linkedin_other_summary": "...",
   "category": "...",
   "primary_user_summary": "...",
   "funding_status": "...",
@@ -151,12 +163,14 @@ _MOCK_SYNTHESIS_RESULT = {
         "Founded by alumni of Renaissance Technologies, Two Sigma, and Google "
         "DeepMind, the platform compresses multi-week research cycles to hours."
     ),
-    "linkedin_summary": (
-        "The company actively publishes content on ML model performance, "
-        "quantitative research methodology, and open roles for ML engineers. "
+    "linkedin_product_summary": (
         "Recent posts highlight Sharpe ratio improvements from ensemble models "
-        "and participation in quant finance conferences, signalling an active "
-        "research culture and growth phase."
+        "and new integrations with alternative data pipelines, showcasing active "
+        "product development."
+    ),
+    "linkedin_other_summary": (
+        "The company actively posts open roles for ML engineers and announces "
+        "participation in quant finance conferences, signalling a growth phase."
     ),
     "category": "Portfolio Managers / Traders",
     "primary_user_summary": (
@@ -190,9 +204,9 @@ def synthesize_company(raw_data: dict) -> dict:
               Each dict has "url" and "content" keys.
 
     Returns:
-        dict with keys: name, domain, website_summary, linkedin_summary,
-        category, funding_status, funding_amount, funding_confidence,
-        funding_source_url, last_updated.
+        dict with keys: name, domain, website_summary, linkedin_product_summary,
+        linkedin_other_summary, category, funding_status, funding_amount,
+        funding_confidence, funding_source_url, last_updated.
     """
     if MOCK_MODE:
         # Validate mock category is in allowed list (guards against fixture drift)
@@ -213,7 +227,7 @@ def synthesize_company(raw_data: dict) -> dict:
     linkedin_posts_text = (
         "\n\n".join(posts)
         if posts
-        else '(No LinkedIn posts available — set linkedin_summary to empty string "")'
+        else '(No LinkedIn posts available — set linkedin_product_summary and linkedin_other_summary to empty string "")'
     )
     linkedin_profile_text = (
         json.dumps(profile, indent=2)
@@ -271,8 +285,8 @@ def synthesize_company(raw_data: dict) -> dict:
 
     result = json.loads(raw_text)
 
-    # Guard: truncate website_summary and linkedin_summary to max 2 sentences
-    for field in ("website_summary", "linkedin_summary"):
+    # Guard: truncate text summaries to max 2 sentences
+    for field in ("website_summary", "linkedin_product_summary", "linkedin_other_summary"):
         text = result.get(field, "")
         if text:
             # Split on sentence-ending punctuation; keep at most 2 sentences
@@ -327,14 +341,19 @@ def synthesize_company(raw_data: dict) -> dict:
     contradiction_notes = result.get("contradiction_notes", "") or ""
     if not isinstance(contradiction_notes, str):
         contradiction_notes = ""
-    if not result.get("website_summary", "") or not result.get("linkedin_summary", ""):
+    _no_linkedin = (
+        not result.get("linkedin_product_summary", "")
+        and not result.get("linkedin_other_summary", "")
+    )
+    if not result.get("website_summary", "") or _no_linkedin:
         contradiction_notes = ""
 
     return {
         "name": raw_data.get("name", ""),
         "domain": raw_data.get("domain", ""),
         "website_summary": result.get("website_summary", ""),
-        "linkedin_summary": result.get("linkedin_summary", ""),
+        "linkedin_product_summary": result.get("linkedin_product_summary", ""),
+        "linkedin_other_summary": result.get("linkedin_other_summary", ""),
         "contradiction_notes": contradiction_notes,
         "category": result["category"],
         "primary_user_summary": result.get("primary_user_summary", ""),
