@@ -18,7 +18,7 @@ _FAILURES_FIELDNAMES = ["name", "domain", "error"]
 
 # Process only the first N companies from companies.csv (trial run limiter).
 # Set to None to process all rows.
-TRIAL_LIMIT: int | None = 10
+TRIAL_LIMIT: int | None = None
 
 # Number of companies per batch before pausing for user confirmation.
 BATCH_SIZE: int = 10
