@@ -335,7 +335,7 @@ def _extract_funding(raw: dict) -> tuple[str, str]:
     return funding_status, funding_amount
 
 
-def fetch_company_posts(linkedin_url: str, max_posts: int = 10) -> list[str]:
+def fetch_company_posts(linkedin_url: str, max_posts: int = 10) -> list[dict]:
     """Fetch recent LinkedIn posts for a company via Apify harvestapi/linkedin-company-posts.
 
     Args:
@@ -343,10 +343,11 @@ def fetch_company_posts(linkedin_url: str, max_posts: int = 10) -> list[str]:
         max_posts: Maximum number of recent posts to retrieve.
 
     Returns:
-        List of post text strings (most recent first).
+        List of {"text": str, "date": str} dicts (most recent first). "date" is
+        the post's postedAt.date from Apify (ISO 8601), or "" if unavailable.
     """
     if MOCK_MODE:
-        return _MOCK_POSTS[:max_posts]
+        return [{"text": text, "date": ""} for text in _MOCK_POSTS[:max_posts]]
 
     # --- Real branch ---
     slug = _slugify(linkedin_url)
@@ -363,8 +364,9 @@ def fetch_company_posts(linkedin_url: str, max_posts: int = 10) -> list[str]:
         },
     )
 
-    # Each item may have a 'text', 'content', or 'postText' field.
-    posts: list[str] = []
+    # Each item may have a 'text', 'content', or 'postText' field, and a
+    # 'postedAt' object with a 'date' field (ISO 8601).
+    posts: list[dict] = []
     for item in items:
         text = (
             item.get("text")
@@ -374,7 +376,8 @@ def fetch_company_posts(linkedin_url: str, max_posts: int = 10) -> list[str]:
         )
         text = text.strip()
         if text:
-            posts.append(text)
+            date = (item.get("postedAt") or {}).get("date", "")
+            posts.append({"text": text, "date": date})
 
     result = posts[:max_posts]
     cache_file.write_text(json.dumps(result, indent=2))
