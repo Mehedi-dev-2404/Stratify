@@ -1,0 +1,14 @@
+name,query,linkedin_url,note
+Dataglade,"site:linkedin.com/company ""Dataglade"" dataglade.com",https://www.linkedin.com/company/dataglade,confirms existing
+Deep Insight Labs,"site:linkedin.com/company ""Deep Insight Labs"" deepinsightlabs.ai",https://www.linkedin.com/company/deep-insight-labs,written (was blank)
+Exvai Research,"site:linkedin.com/company ""EXVAi Research"" exvai-research.com",https://www.linkedin.com/company/exvai-research,confirms existing
+Finpilot,"site:linkedin.com/company ""Finpilot"" finpilot.ai Seattle",https://www.linkedin.com/company/finpilot-ai,confirms existing
+Compound,"site:linkedin.com/company ""Compound AI"" getcompound.ai",https://www.linkedin.com/company/compound-ai,"differs from existing (compound-financial) - not overwritten, flagged for manual review"
+Formula Insight,"site:linkedin.com/company ""Formula Insight"" formulainsight.io",https://www.linkedin.com/company/formula-insight,confirms existing
+Pinegap,site:linkedin.com/company PineGap pinegap.ai,https://www.linkedin.com/company/pinegap,confirms existing
+Scalar Field,"site:linkedin.com/company ""Scalar Field"" scalarfield.io",https://www.linkedin.com/company/scalar-field,"differs from existing (inputdotcom) - not overwritten, flagged for manual review"
+Fintool,site:linkedin.com/company Fintool fintool.com filings transcripts,https://www.linkedin.com/company/fintool/,"differs from existing (fintoolx) - not overwritten, flagged for manual review"
+Keye,"site:linkedin.com/company ""Keye"" keye.co YC",https://www.linkedin.com/company/keye,confirms existing
+Polygon,site:linkedin.com/company polygon.io market data API,https://www.linkedin.com/company/polygon-io,confirms existing
+Portrait Analytics,"site:linkedin.com/company ""Portrait Analytics"" portraitanalytics.ai",https://www.linkedin.com/company/portrait-analytics,written (was blank)
+Newcortex,site:linkedin.com/company Newcortex newcortex.ai,https://www.linkedin.com/company/newcortex-ai,written (was blank)
