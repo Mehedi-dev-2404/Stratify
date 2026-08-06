@@ -17,10 +17,14 @@ _MOCK_SHEET_CSV = _BASE / "mock_sheet.csv"
 
 _MOCK_SHEET_FIELDNAMES = [
     "name", "domain", "website_summary", "linkedin_product_summary",
-    "linkedin_other_summary", "contradiction_notes",
+    "linkedin_other_summary", "last_post_date", "inactive_6m", "contradiction_notes",
     "category", "primary_user_summary", "funding_status", "funding_amount",
     "funding_confidence", "sources", "data_notes", "last_updated",
 ]
+# last_post_date / inactive_6m are intentionally left blank here — run
+# add_post_dates.py afterward to populate them from the posts cache (it reads
+# dates straight from raw_cache/*_posts.json, which is more current than
+# whatever linkedin_posts snapshot is embedded in each research_db record).
 
 
 def main() -> None:

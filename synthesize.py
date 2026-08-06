@@ -222,11 +222,14 @@ def synthesize_company(raw_data: dict) -> dict:
 
     # --- Real branch: call Claude claude-sonnet-4-6 ---
     posts = raw_data.get("linkedin_posts", [])
+    # fetch_company_posts() returns {"text", "date"} dicts; normalize to plain
+    # text so the prompt join below always works, even for legacy list[str] data.
+    post_texts = [p["text"] if isinstance(p, dict) else p for p in posts]
     profile = raw_data.get("linkedin_profile") or {}
 
     linkedin_posts_text = (
-        "\n\n".join(posts)
-        if posts
+        "\n\n".join(post_texts)
+        if post_texts
         else '(No LinkedIn posts available — set linkedin_product_summary and linkedin_other_summary to empty string "")'
     )
     linkedin_profile_text = (
