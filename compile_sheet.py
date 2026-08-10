@@ -18,9 +18,19 @@ _MOCK_SHEET_CSV = _BASE / "mock_sheet.csv"
 _MOCK_SHEET_FIELDNAMES = [
     "name", "domain", "website_summary", "linkedin_product_summary",
     "linkedin_other_summary", "last_post_date", "inactive_6m", "contradiction_notes",
-    "category", "primary_user_summary", "funding_status", "funding_amount",
-    "funding_confidence", "sources", "data_notes", "last_updated",
+    "category", "primary_user_summary", "unique_value_prop", "funding_status",
+    "funding_amount", "funding_confidence", "sources", "data_notes", "last_updated",
 ]
+
+# Companies removed from the final deliverable — never write these rows.
+EXCLUDED_COMPANIES = {
+    "Tornado AI", "Unique AI", "AQ22", "Causality AI", "Factonium", "Fiscal AI",
+    "Model Updater", "Nosible", "Plux", "Premia", "Prymer", "Quill AI",
+    "Rowspace AI", "Sigtech", "Sov.ai", "Financial AI", "Terminal X",
+    "Uptrends.ai", "Entelligent", "Fey", "Fyva", "Nash", "Obi9 Technologies",
+    "Parsym", "StockInsights AI", "Current", "ZeroWallStreet", "Dili AI",
+    "Structify", "Catalyst Edge", "Decisional AI", "Nummo", "Zanista",
+}
 # last_post_date / inactive_6m are intentionally left blank here — run
 # add_post_dates.py afterward to populate them from the posts cache (it reads
 # dates straight from raw_cache/*_posts.json, which is more current than
@@ -33,6 +43,8 @@ def main() -> None:
     )
     print(f"Found {len(company_jsons)} cached company records.")
 
+    written = 0
+    skipped = 0
     with _MOCK_SHEET_CSV.open("w", newline="") as f:
         writer = csv.DictWriter(
             f, fieldnames=_MOCK_SHEET_FIELDNAMES, extrasaction="ignore"
@@ -42,6 +54,10 @@ def main() -> None:
             record = json.loads(path.read_text())
             raw = record.get("raw", {})
             e = record.get("enriched", {})
+            if e.get("name", "") in EXCLUDED_COMPANIES:
+                skipped += 1
+                continue
+            written += 1
             writer.writerow({
                 "name": e.get("name", ""),
                 "domain": e.get("domain", ""),
@@ -51,6 +67,7 @@ def main() -> None:
                 "contradiction_notes": e.get("contradiction_notes", ""),
                 "category": e.get("category", ""),
                 "primary_user_summary": e.get("primary_user_summary", ""),
+                "unique_value_prop": e.get("unique_value_prop", ""),
                 "funding_status": e.get("funding_status", ""),
                 "funding_amount": e.get("funding_amount", ""),
                 "funding_confidence": e.get("funding_confidence", ""),
@@ -59,7 +76,7 @@ def main() -> None:
                 "last_updated": e.get("last_updated", ""),
             })
 
-    print(f"mock_sheet.csv written with {len(company_jsons)} rows.")
+    print(f"mock_sheet.csv written with {written} rows ({skipped} excluded).")
 
 
 if __name__ == "__main__":

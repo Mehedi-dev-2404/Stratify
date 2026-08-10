@@ -44,11 +44,15 @@ def main() -> None:
         fieldnames = list(reader.fieldnames)
         rows = list(reader)
 
-    # Insert last_post_date + inactive_6m right after linkedin_other_summary.
-    insert_at = fieldnames.index("linkedin_other_summary") + 1
-    new_fieldnames = (
-        fieldnames[:insert_at] + ["last_post_date", "inactive_6m"] + fieldnames[insert_at:]
-    )
+    # Insert last_post_date + inactive_6m right after linkedin_other_summary,
+    # unless the columns are already present (compile_sheet.py emits them blank).
+    if "last_post_date" in fieldnames and "inactive_6m" in fieldnames:
+        new_fieldnames = fieldnames
+    else:
+        insert_at = fieldnames.index("linkedin_other_summary") + 1
+        new_fieldnames = (
+            fieldnames[:insert_at] + ["last_post_date", "inactive_6m"] + fieldnames[insert_at:]
+        )
 
     today = datetime.now(timezone.utc)
     processed = 0

@@ -53,6 +53,7 @@ _TOKEN_SYNONYMS: dict[str, str] = {
 # Excluded from the slug_coverage denominator to avoid penalising valid matches.
 _GENERIC_SLUG_TOKENS: frozenset[str] = frozenset({
     "tech", "ai", "inc", "hq", "io", "co", "app", "group", "api",
+    "llc", "ltd", "corp", "global", "labs", "official",
 })
 
 
@@ -76,47 +77,88 @@ def _get_url_slug(url: str) -> str:
 
 
 def _url_slug_matches_name(url: str, company_name: str) -> bool:
-    """Check whether the LinkedIn URL slug bidirectionally overlaps the company name.
+    """Check whether a LinkedIn URL slug plausibly belongs to the company.
 
-    Requires ≥70% token coverage in BOTH directions to avoid:
-      "banker" matching "american-banker" (slug_coverage = 0.5, fails).
+    Requires TWO fractions to both clear 70%:
 
-    Two accommodations applied before scoring:
+      - name_coverage — fraction of company-name tokens accounted for by the
+        slug. A token counts if it is an exact slug token OR the slug's
+        concatenated form begins with it (so "scend"→"scendinc" and the whole
+        name "blueflame"→"blueflameai" match). This is what the old exact-set
+        intersection got wrong: it rejected valid concatenated / TLD-suffixed
+        slugs like "scendinc", "cliftonai", or "complexiti.ai".
+
+      - slug_precision — fraction of the slug's NON-generic tokens that are
+        explained by a name token. This is the guard that keeps
+        "banker" from matching "american-banker": the extra "american" token is
+        unexplained, so precision = 0.5 and the match is rejected. It also kills
+        "insidecatalyst"/"catalyst-marketing-llc" for a company named "Catalyst".
+
+    Accommodations applied first:
       1. Synonym normalisation — "labs"→"laboratories" so abbreviation variants
-         in names and slugs are treated as identical tokens.
-      2. Generic-suffix exclusion — tokens like "tech", "ai", "inc" that appear
-         in the slug but NOT in the name are excluded from the slug_coverage
-         denominator, preventing them from penalising otherwise-strong matches
-         (e.g. "carousel-tech" for a company named "Carousel").
+         match.
+      2. Slugs are split on '-', '_' AND '.' so TLD-style slugs like
+         "complexiti.ai" tokenise correctly.
+      3. Generic suffix tokens ("tech", "ai", "inc", "llc", …) are excluded from
+         the precision denominator unless the name itself contains them.
     """
-    raw_slug = _get_url_slug(url)
+    raw_slug = _get_url_slug(url).lower()
     if not raw_slug:
         return False
 
-    slug_tokens_raw = {t for t in re.split(r"[-_]", raw_slug.lower()) if len(t) > 1}
-    name_tokens_raw = {
-        t
+    # Split on -, _ and . so "complexiti.ai" → {complexiti, ai}
+    slug_tokens_list = [
+        _TOKEN_SYNONYMS.get(t, t)
+        for t in re.split(r"[-_.]", raw_slug)
+        if len(t) > 1
+    ]
+    name_tokens_list = [
+        _TOKEN_SYNONYMS.get(t, t)
         for t in re.sub(r"[^a-z0-9]", " ", company_name.lower()).split()
         if len(t) > 1
-    }
-    if not name_tokens_raw or not slug_tokens_raw:
+    ]
+    if not name_tokens_list or not slug_tokens_list:
         return False
 
-    # Apply synonym normalisation to both sets
-    slug_tokens = {_TOKEN_SYNONYMS.get(t, t) for t in slug_tokens_raw}
-    name_tokens = {_TOKEN_SYNONYMS.get(t, t) for t in name_tokens_raw}
+    slug_tokens = set(slug_tokens_list)
+    name_tokens = set(name_tokens_list)
 
-    overlap = name_tokens & slug_tokens
-    name_coverage = len(overlap) / len(name_tokens)
+    # Concatenated (separator-free) forms for prefix matching.
+    concat_slug = re.sub(r"[^a-z0-9]", "", raw_slug)          # "scendinc"
+    concat_name = "".join(name_tokens_list)                   # "scend"
 
-    # Exclude generic noise tokens from the slug denominator only when they are
-    # NOT already present in the (normalised) name — preserving them when they
-    # ARE meaningful (e.g. company actually called "AI Tech").
+    # --- name_coverage ---
+    # Whole-name concatenation aligns with the slug prefix (either direction):
+    # catches "blueflame"→"blueflameai" and "scend"→"scendinc".
+    if concat_slug.startswith(concat_name) or concat_name.startswith(concat_slug):
+        name_coverage = 1.0
+    else:
+        covered = sum(
+            1 for t in name_tokens
+            if t in slug_tokens or concat_slug.startswith(t)
+        )
+        name_coverage = covered / len(name_tokens)
+
+    # --- slug_precision ---
+    # A slug token is "explained" if it equals / prefixes / is prefixed by a
+    # name token (handles minor variants), ignoring generic suffixes.
     generic_noise = _GENERIC_SLUG_TOKENS - name_tokens
-    slug_tokens_for_coverage = slug_tokens - generic_noise or slug_tokens
-    slug_coverage = len(overlap) / len(slug_tokens_for_coverage)
+    meaningful_slug = [t for t in slug_tokens if t not in generic_noise] or list(slug_tokens)
 
-    return name_coverage >= 0.7 and slug_coverage >= 0.7
+    def _explained(tok: str) -> bool:
+        if tok in name_tokens:
+            return True
+        # single concatenated slug token consumed by the full name prefix
+        if len(meaningful_slug) == 1 and (
+            concat_slug.startswith(concat_name) or concat_name.startswith(concat_slug)
+        ):
+            return True
+        return any(tok.startswith(nt) or nt.startswith(tok) for nt in name_tokens)
+
+    explained = sum(1 for t in meaningful_slug if _explained(t))
+    slug_precision = explained / len(meaningful_slug)
+
+    return name_coverage >= 0.7 and slug_precision >= 0.7
 
 
 def _domain_in_context(domain: str, context: str) -> bool:
@@ -308,6 +350,26 @@ def resolve_company_linkedin(
     query = f"{company_name} linkedin company page"
     raw_results = search_fn(query)
     candidates = _extract_candidates_with_context(raw_results)
+
+    # Recall fallback: if the name-only query surfaced no candidate that passes
+    # scoring, retry with a domain-scoped query (mirrors the manual
+    # "site:linkedin.com/company <domain>" trick). Catches pages that the
+    # name-only search never returned — e.g. a company whose LinkedIn slug is
+    # keyed off its domain rather than a searchable brand name.
+    def _any_passes(cands: list[dict]) -> bool:
+        return any(_score_candidate(c, company_name, domain)[0] > 0 for c in cands)
+
+    if domain and not _any_passes(candidates):
+        parsed = urlparse(domain.strip().rstrip("/"))
+        bare = (parsed.netloc or domain.strip()).lower().lstrip("www.")
+        if bare:
+            fallback_query = f'site:linkedin.com/company {company_name} {bare}'
+            fallback_results = search_fn(fallback_query)
+            seen_urls = {c["url"] for c in candidates}
+            for c in _extract_candidates_with_context(fallback_results):
+                if c["url"] not in seen_urls:
+                    seen_urls.add(c["url"])
+                    candidates.append(c)
 
     # Score all candidates, pick the highest-scoring one that passes
     best_url = ""
