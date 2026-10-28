@@ -451,7 +451,7 @@ def fetch_website_text(domain: str) -> str:
 
 
 def fetch_founder_linkedin(founder_url: str) -> dict:
-    """Fetch a founder's personal LinkedIn profile via Apify harvestapi/linkedin-profile.
+    """Fetch a founder's personal LinkedIn profile via Apify johnvc/linkedin-profile-api.
 
     Args:
         founder_url: Full LinkedIn personal profile URL (linkedin.com/in/...).
@@ -480,7 +480,7 @@ def fetch_founder_linkedin(founder_url: str) -> dict:
 
     try:
         items = _apify_run_sync(
-            "harvestapi/linkedin-profile",
+            "johnvc/linkedin-profile-api",
             {"profileUrls": [founder_url]},
         )
     except Exception:
@@ -491,12 +491,12 @@ def fetch_founder_linkedin(founder_url: str) -> dict:
 
     headline = raw.get("headline") or raw.get("title") or ""
     summary = (
-        raw.get("summary")
-        or raw.get("about")
+        raw.get("about")
+        or raw.get("summary")
         or raw.get("description")
         or ""
     )
-    current_company = ""
+    current_company = raw.get("currentCompany") or ""
     positions = raw.get("positions") or raw.get("currentPositions") or []
     if isinstance(positions, list) and positions:
         current_company = (
